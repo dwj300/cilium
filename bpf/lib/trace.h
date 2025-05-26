@@ -355,7 +355,8 @@ _send_trace_notify6(struct __ctx_buff *ctx, enum trace_point obs_point,
 		.flags		= flags,
 	};
 
-	ipv6_addr_copy(&msg.orig_ip6, orig_addr);
+	if (orig_addr)
+		ipv6_addr_copy(&msg.orig_ip6, orig_addr);
 
 	ctx_event_output(ctx, &cilium_events,
 			 (cap_len << 32) | BPF_F_CURRENT_CPU,
@@ -397,6 +398,14 @@ _send_trace_notify6(struct __ctx_buff *ctx, enum trace_point obs_point,
 
 #define send_trace_notify(ctx, obs_point, src, dst, dst_id, ifindex, reason, monitor) \
 		_send_trace_notify(ctx, obs_point, src, dst, dst_id, ifindex, reason, monitor, \
+		__MAGIC_LINE__, __MAGIC_FILE__)
+
+#define send_trace_notify4(ctx, obs_point, src, dst, dst_id, ifindex, reason, monitor) \
+		_send_trace_notify4(ctx, obs_point, src, dst, 0, dst_id, ifindex, reason, monitor, \
+		__MAGIC_LINE__, __MAGIC_FILE__)
+
+#define send_trace_notify6(ctx, obs_point, src, dst, dst_id, ifindex, reason, monitor) \
+		_send_trace_notify6(ctx, obs_point, src, dst, NULL, dst_id, ifindex, reason, monitor, \
 		__MAGIC_LINE__, __MAGIC_FILE__)
 
 #define send_trace_notify_xlated4(ctx, obs_point, src, dst, orig_addr, dst_id, ifindex, reason, monitor) \
