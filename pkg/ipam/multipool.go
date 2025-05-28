@@ -23,6 +23,8 @@ import (
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
+	"github.com/cilium/cilium/pkg/node"
+	nodeTypes "github.com/cilium/cilium/pkg/node/types"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/time"
 	"github.com/cilium/cilium/pkg/trigger"
@@ -238,9 +240,10 @@ type multiPoolManager struct {
 
 	node *ciliumv2.CiliumNode
 
-	controller  *controller.Manager
-	k8sUpdater  *trigger.Trigger
-	nodeUpdater nodeUpdater
+	controller     *controller.Manager
+	k8sUpdater     *trigger.Trigger
+	localNodeStore *node.LocalNodeStore
+	nodeUpdater    nodeUpdater
 
 	finishedRestore map[Family]bool
 	logger          *slog.Logger
@@ -248,7 +251,7 @@ type multiPoolManager struct {
 
 var _ Allocator = (*multiPoolAllocator)(nil)
 
-func newMultiPoolManager(logger *slog.Logger, conf *option.DaemonConfig, node agentK8s.LocalCiliumNodeResource, owner Owner, clientset nodeUpdater) *multiPoolManager {
+func newMultiPoolManager(logger *slog.Logger, conf *option.DaemonConfig, node agentK8s.LocalCiliumNodeResource, owner Owner, localNodeStore *node.LocalNodeStore, clientset nodeUpdater) *multiPoolManager {
 	preallocMap, err := parseMultiPoolPreAllocMap(conf.IPAMMultiPoolPreAllocation)
 	if err != nil {
 		logging.Fatal(logger, fmt.Sprintf("Invalid %s flag value", option.IPAMMultiPoolPreAllocation), logfields.Error, err)
@@ -278,6 +281,7 @@ func newMultiPoolManager(logger *slog.Logger, conf *option.DaemonConfig, node ag
 		node:                   nil,
 		controller:             k8sController,
 		k8sUpdater:             k8sUpdater,
+		localNodeStore:         localNodeStore,
 		nodeUpdater:            clientset,
 		finishedRestore:        map[Family]bool{},
 	}
@@ -554,6 +558,14 @@ func (m *multiPoolManager) updateCiliumNode(ctx context.Context) error {
 	newNode.Spec.IPAM.Pools.Allocated = allocated
 
 	m.mutex.Unlock()
+
+	no := nodeTypes.ParseCiliumNode(newNode)
+	m.localNodeStore.Update(func(n *node.LocalNode) {
+		n.IPv4AllocCIDR = no.IPv4AllocCIDR
+		n.IPv4SecondaryAllocCIDRs = no.IPv4SecondaryAllocCIDRs
+		n.IPv6AllocCIDR = no.IPv6AllocCIDR
+		n.IPv6SecondaryAllocCIDRs = no.IPv6SecondaryAllocCIDRs
+	})
 
 	if !newNode.Spec.IPAM.DeepEqual(&m.node.Spec.IPAM) {
 		_, err := m.nodeUpdater.Update(ctx, newNode, metav1.UpdateOptions{})
